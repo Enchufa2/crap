@@ -21,7 +21,7 @@ make
 ### For Android
 
 ```bash
-export PATH=<standalone NDK toolchain>:$PATH
+export PATH=<standalone_NDK_toolchain_path>/bin:$PATH
 export AM_CFLAGS="-fPIE -pie"
 autoreconf --install
 ./configure --host=arm-linux-androideabi TARGET_SHELL=/system/bin/sh
