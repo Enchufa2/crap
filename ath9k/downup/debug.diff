@@ -1,0 +1,272 @@
+--- backports-3.18.1-1/drivers/net/wireless/ath/ath9k/debug.c	2014-12-21 22:37:14.000000000 +0100
++++ debug.c	2016-11-30 16:09:35.946967113 +0100
+@@ -18,6 +18,11 @@
+ #include <linux/vmalloc.h>
+ #include <linux/export.h>
+ #include <asm/unaligned.h>
++//-->IUCAR
++#include <linux/hrtimer.h>
++#include <linux/time.h>
++#include <net/sock.h>
++//<--IUCAR
+ 
+ #include "ath9k.h"
+ 
+@@ -502,6 +507,244 @@
+ 	.llseek = default_llseek,
+ };
+ 
++//-->IUCAR
++#define	timersub(a, b, result)				 \
++  do {							 \
++    (result)->tv_sec = (a)->tv_sec - (b)->tv_sec;	 \
++    (result)->tv_nsec = (a)->tv_nsec - (b)->tv_nsec;	 \
++    if ((result)->tv_nsec < 0) {			 \
++      --(result)->tv_sec;				 \
++      (result)->tv_nsec += 1000000000;			 \
++    }							 \
++  } while (0)
++
++static int raw_packet_prepare(int ifindex, struct sk_buff **skb)
++{
++	#define PACKET_LEN 48
++  static char packet[] = {
++		"\x00\x20\xa6\xca\xa4\xc5" // DSTMAC
++    "\x00\x21\x63\xfe\x66\x1f" // SRCMAC
++    "\x08\x00" // LLC-TYPE 2
++    "\x45\x00\x00\x22\xb0\xd6\x40\x00\x40\x11\x75\xf1\x0a\x00\x00\x03\x0a\x00\x00\x01" //IP 20
++    "\xcf\xc2\x13\x88\x00\x0e\xaf\x54" //UDP 8
++    "payloa" //DATA 6
++  };
++  const struct iovec iov = { .iov_base = packet, .iov_len = PACKET_LEN };
++	mm_segment_t oldfs = get_fs();
++  struct socket *sock;
++  struct net_device *dev;
++  int err, reserve = 0;
++  int hlen, tlen;
++	u16 qi;
++
++  err = sock_create_kern(AF_PACKET, SOCK_RAW, 0, &sock);
++  if (err) goto out;
++
++	dev = dev_get_by_index(sock_net(sock->sk), ifindex);
++
++  err = -ENXIO;
++  if (unlikely(dev == NULL))
++    goto out_unlock;
++  err = -ENETDOWN;
++  if (unlikely(!(dev->flags & IFF_UP)))
++    goto out_unlock;
++
++  reserve = dev->hard_header_len;
++
++  err = -ENOBUFS;
++  hlen = LL_RESERVED_SPACE(dev);
++  tlen = dev->needed_tailroom;
++	*skb = sock_alloc_send_pskb(sock->sk, hlen+tlen+PACKET_LEN, 0, 0, &err, 0);
++  if (*skb == NULL) goto out_unlock;
++	skb_reserve(*skb, hlen);
++  skb_put(*skb, PACKET_LEN);
++  (*skb)->data_len = 0;
++
++  skb_set_network_header(*skb, reserve);
++
++  /* Returns -EFAULT on error */
++	set_fs(KERNEL_DS);
++  err = skb_copy_datagram_from_iovec(*skb, 0, &iov, 0, PACKET_LEN);
++	set_fs(oldfs);
++  if (err) goto out_free;
++
++  sock_tx_timestamp(sock->sk, &skb_shinfo(*skb)->tx_flags);
++
++  (*skb)->protocol = 0;
++  (*skb)->dev = dev;
++  (*skb)->priority = sock->sk->sk_priority;
++  (*skb)->mark = sock->sk->sk_mark;
++
++  qi = dev->netdev_ops->ndo_select_queue(dev, *skb, NULL, NULL);
++	skb_set_queue_mapping(*skb, qi);
++  skb_probe_transport_header(*skb, reserve);
++
++  return 0;
++
++out_free:
++  kfree_skb(*skb);
++out_unlock:
++	if (dev)
++    dev_put(dev);
++out:
++  return err;
++#undef PACKET_LEN
++}
++
++static unsigned long downup_time = 50;
++
++static ssize_t read_file_downup(struct file *file, char __user *user_buf,
++																size_t count, loff_t *ppos)
++{
++  struct ath_softc *sc = file->private_data;
++  struct ath_hw *ah = sc->sc_ah;
++	struct timespec ts1, ts2, ts3, ts4;
++	struct sk_buff *skb = NULL;
++	struct socket *sock;
++	struct net_device *dev;
++  char buf[512];
++  unsigned int len = 0;
++	int err;
++
++	err = raw_packet_prepare(sc->hw->wiphy->_net->ifindex, &skb);
++	if (err || !skb) return 0;
++	sock = skb->sk->sk_socket;
++	dev = skb->dev;
++
++	getnstimeofday(&ts1);
++	REG_WRITE(ah, AR_RTC_FORCE_WAKE, AR_RTC_FORCE_WAKE_ON_INT);
++	udelay(60);
++	REG_SET_BIT(ah, AR_RTC_FORCE_WAKE, AR_RTC_FORCE_WAKE_EN);
++
++	getnstimeofday(&ts2);
++	udelay(downup_time);
++	getnstimeofday(&ts3);
++	dev->netdev_ops->ndo_start_xmit(skb, dev);
++	getnstimeofday(&ts4);
++	//timersub(&ts3, &ts2, &ts_diff);
++	dev_put(dev);
++	sock_release(sock);
++	sock = NULL;
++
++  len += scnprintf(buf + len, sizeof(buf) - len,
++									 "downup: %lu | ts1: %ld.%09ld | ts2: %ld.%09ld | ",
++			 					 	 downup_time, ts1.tv_sec, ts1.tv_nsec, ts2.tv_sec, ts2.tv_nsec);
++	len += scnprintf(buf + len, sizeof(buf) - len,
++                   "ts3: %ld.%09ld | ts4: %ld.%09ld\n",
++                   ts3.tv_sec, ts3.tv_nsec, ts4.tv_sec, ts4.tv_nsec);
++  if (len > sizeof(buf))
++    len = sizeof(buf);
++  return simple_read_from_buffer(user_buf, count, ppos, buf, len);
++}
++
++static ssize_t write_file_downup(struct file *file, const char __user *user_buf,
++                             		 size_t count, loff_t *ppos)
++{
++  unsigned long downup;
++  char buf[32];
++  ssize_t len;
++
++  len = min(count, sizeof(buf) - 1);
++  if (copy_from_user(buf, user_buf, len))
++    return -EFAULT;
++
++  buf[len] = '\0';
++  if (kstrtoul(buf, 0, &downup))
++    return -EINVAL;
++	if (downup > 1000)
++		return -EINVAL;
++
++	downup_time = downup;
++	return count;
++}
++
++static const struct file_operations fops_downup = {
++  .read = read_file_downup,
++  .write = write_file_downup,
++  .open = simple_open,
++  .owner = THIS_MODULE,
++  .llseek = default_llseek,
++};
++
++static unsigned long downup_period = 200;
++static ktime_t ktime_period;
++static struct ath_hw *global_ah;
++
++static enum hrtimer_restart downup_function(struct hrtimer *timer)
++{
++	struct ath_hw *ah = global_ah;
++	struct timespec ts;
++
++  REG_WRITE(ah, AR_RTC_FORCE_WAKE, AR_RTC_FORCE_WAKE_ON_INT);
++  udelay(downup_time);
++  REG_SET_BIT(ah, AR_RTC_FORCE_WAKE, AR_RTC_FORCE_WAKE_EN);
++	getnstimeofday(&ts);
++
++	hrtimer_forward_now(timer, ktime_period);
++  return HRTIMER_RESTART;
++}
++
++static ssize_t read_file_downup_period(struct file *file, char __user *user_buf,
++                             					 size_t count, loff_t *ppos)
++{
++  struct ath_softc *sc = file->private_data;
++  struct ath_hw *ah = sc->sc_ah;
++  char buf[512];
++  unsigned int len = 0;
++	static struct hrtimer htimer;
++	static int active = 0;
++
++	global_ah = ah;
++	if (active) {
++		active = 0;
++		hrtimer_cancel(&htimer);
++
++		len += scnprintf(buf + len, sizeof(buf) - len, "hrtimer stopped\n");
++	} else {
++		active = 1;
++		hrtimer_init(&htimer, CLOCK_REALTIME, HRTIMER_MODE_REL);
++		htimer.function = downup_function;
++		ktime_period = ktime_set(0, (downup_period-downup_time)*1000);
++		hrtimer_start(&htimer, ktime_period, HRTIMER_MODE_REL);
++
++  	len += scnprintf(buf + len, sizeof(buf) - len,
++                     "hrtimer started, downup_period=%lu, downup_time=%lu us\n",
++			 						 	 downup_period, downup_time);
++	}
++  if (len > sizeof(buf))
++    len = sizeof(buf);
++  return simple_read_from_buffer(user_buf, count, ppos, buf, len);
++}
++
++static ssize_t write_file_downup_period(struct file *file, const char __user *user_buf,
++                             size_t count, loff_t *ppos)
++{
++  unsigned long period;
++  char buf[32];
++  ssize_t len;
++
++	len = min(count, sizeof(buf) - 1);
++  if (copy_from_user(buf, user_buf, len))
++    return -EFAULT;
++
++  buf[len] = '\0';
++  if (kstrtoul(buf, 0, &period))
++    return -EINVAL;
++  if (period <= downup_time)
++    return -EINVAL;
++
++  downup_period = period;
++  return count;
++}
++
++static const struct file_operations fops_downup_period = {
++  .read = read_file_downup_period,
++  .write = write_file_downup_period,
++  .open = simple_open,
++  .owner = THIS_MODULE,
++  .llseek = default_llseek,
++};
++//<--IUCAR
+ 
+ void ath_debug_stat_interrupt(struct ath_softc *sc, enum ath9k_int status)
+ {
+@@ -1337,6 +1580,12 @@
+ 	ath9k_tx99_init_debug(sc);
+ 	ath9k_spectral_init_debug(sc);
+ 
++	//-->IUCAR
++	debugfs_create_file("downup", S_IRUSR | S_IWUSR, sc->debug.debugfs_phy,
++                      sc, &fops_downup);
++	debugfs_create_file("downup_period", S_IRUSR | S_IWUSR, sc->debug.debugfs_phy,
++                      sc, &fops_downup_period);
++	//<--IUCAR
+ 	debugfs_create_file("dma", S_IRUSR, sc->debug.debugfs_phy, sc,
+ 			    &fops_dma);
+ 	debugfs_create_file("interrupt", S_IRUSR, sc->debug.debugfs_phy, sc,
