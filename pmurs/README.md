@@ -20,8 +20,14 @@ make
 
 ### For Android
 
+Substitute `NDK` for the location of the downloaded Android NDK, and put the
+standalone `ANDROID_TOOLCHAIN` wherever you want.
+
 ```bash
-export PATH=<standalone_NDK_toolchain_path>/bin:$PATH
+export ANDROID_TOOLCHAIN=/tmp/my-android-toolchain
+$NDK/build/tools/make_standalone_toolchain.py \
+    --arch arm --api 24 --install-dir $ANDROID_TOOLCHAIN
+export PATH=$ANDROID_TOOLCHAIN/bin:$PATH
 export AM_CFLAGS="-fPIE -pie"
 autoreconf --install
 ./configure --host=arm-linux-androideabi TARGET_SHELL=/system/bin/sh
