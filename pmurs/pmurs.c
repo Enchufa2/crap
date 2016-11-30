@@ -1,5 +1,5 @@
 /*
-* pmurs, AKA Poor Man's UDP Reverse Shell
+* pmurs: Poor Man's UDP Reverse Shell
 * Copyright (C) 2016 Iñaki Ucar
 *
 * This program is free software; you can redistribute it and/or modify

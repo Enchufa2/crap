@@ -1,4 +1,4 @@
-# pmurs, AKA Poor Man's UDP Reverse Shell
+# pmurs: Poor Man's UDP Reverse Shell
 
 This program opens a UDP socket and keeps executing whatever is received from
 a remote IP/PORT in a shell, returning the output back. At the same time, it
