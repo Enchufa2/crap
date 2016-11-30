@@ -10,9 +10,21 @@ open any NAT in the middle. Linux establishes a timeout of 60 seconds (see
 
 ## Compilation
 
+### For Linux
+
 ```bash
 autoreconf --install
 ./configure
+make
+```
+
+### For Android
+
+```bash
+export PATH=<standalone NDK toolchain>:$PATH
+export AM_CFLAGS="-fPIE -pie"
+autoreconf --install
+./configure --host=arm-linux-androideabi TARGET_SHELL=/system/bin/sh
 make
 ```
 

