@@ -6,6 +6,7 @@
 import argparse, pcapy, struct, sys
 from time import time
 from collections import deque
+from multiprocessing import Process, Queue
 from matplotlib import pyplot as plt
 
 # Radiotap "present" field bits
@@ -34,6 +35,9 @@ class Plot:
         self.init = time()
         self.maxT = maxT
         self.line, = plt.plot(self.x, self.y)
+        plt.grid(True)
+        plt.xlabel('Time')
+        plt.ylabel('Signal Strength [dBm]')
         plt.ylim([-100, 0])
         self._redraw()
 
@@ -45,9 +49,9 @@ class Plot:
 
     # update plot with a new point
     def update(self, data):
-        t = time() - self.init
-        self.x.append(t)
-        self.y.append(data)
+        for point in data:
+            self.x.append(point[0] - self.init)
+            self.y.append(point[1])
         while self.x[-1] - self.x[0] > self.maxT:
             self.x.popleft()
             self.y.popleft()
@@ -63,6 +67,8 @@ class Parser:
         if plot:
             self.plot = Plot(xAxis)
         else: self.plot = None
+        self.q = Queue()
+        self.p = Process(target=self.pc.loop, args=(-1, self.recv_pkts))
 
     # what to do with every packet
     def recv_pkts(self, hdr, data):
@@ -82,22 +88,33 @@ class Parser:
                 offset += 4
             if flags & 1 << RTAP_FHSS:
                 offset += 2
-
             # get SSI Signal [dBm]
+            t = hdr.getts()
             power, = struct.unpack('b', data[8+offset])
-            if self.plot:
-            	self.plot.update(power)
-            else:
-            	print power
-            	sys.stdout.flush()
+            self.q.put((t[0] + t[1] * 1e-6, power))
+
+    def q_get_all(self):
+        data = []
+        data.append(self.q.get())
+        while not self.q.empty():
+            data.append(self.q.get())
+        return data
 
     # fun!
     def run(self):
+        self.p.start()
         try:
-            # capture packets (indefinitely)
-            self.pc.loop(-1, self.recv_pkts)
+            while True:
+                data = self.q_get_all()
+                if self.plot:
+                    self.plot.update(data)
+                else:
+                    for point in data:
+                        print point[0], point[1]
+                    sys.stdout.flush()
         except KeyboardInterrupt:
-            pass
+            self.p.terminate()
+            self.p.join()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Not so bad (nor so good) wireless RSSI monitor.')
