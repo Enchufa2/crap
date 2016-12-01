@@ -4,6 +4,7 @@
 # Copyright (C) 2016 Iñaki Ucar  <i.ucar86@gmail.com>
 
 import argparse, pcapy, struct, sys
+from time import time
 from collections import deque
 from matplotlib import pyplot as plt
 
@@ -27,37 +28,42 @@ RTAP_EXT = 31 # Denotes extended "present" fields.
 
 # class that holds data for N samples
 class DataBuf:
-    def __init__(self, maxLen):
-        self.y = deque([0.0]*maxLen)
-        self.maxLen = maxLen
+    def __init__(self, maxT):
+        self.x = deque()
+        self.y = deque()
+        self.init = time()
+        self.maxT = maxT
 
-    # ring buffer
-    def addToBuf(self, buf, val):
-        if len(buf) < self.maxLen:
-            buf.append(val)
-        else:
-            buf.pop()
-            buf.appendleft(val)
-
-    # add data
+    # add data to ring buffer
     def add(self, data):
-        self.addToBuf(self.y, data)
+        t = time() - self.init
+        self.x.append(t)
+        self.y.append(data)
+        while self.x[-1] - self.x[0] > self.maxT:
+            self.x.popleft()
+            self.y.popleft()
 
 # plot class
 class Plot:
     def __init__(self, dataBuf):
-        # set plot to animated
+        # set interactive mode
         plt.ion()
-        self.line, = plt.plot(dataBuf.y)
+        self.line, = plt.plot(dataBuf.x, dataBuf.y)
         plt.ylim([-100, 0])
 
     # update plot
     def update(self, dataBuf):
-        self.line.set_ydata(dataBuf.y)
+        # not working
+        # self.line.set_xdata(dataBuf.x)
+        # self.line.set_ydata(dataBuf.y)
+        # plt.draw()
+        # workaround
+        plt.plot(dataBuf.x, dataBuf.y)
         plt.draw()
+        plt.pause(0.001)
 
 class Parser:
-    def __init__(self, dev, plot, xAxis=1000):
+    def __init__(self, dev, plot, xAxis=10):
         max_bytes = 200
         promiscuous = True
         read_timeout = 10 # in milliseconds
