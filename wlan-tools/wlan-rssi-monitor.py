@@ -26,53 +26,43 @@ RTAP_DB_ANTNOISE = 13
 RTAP_FCS = 14 # XXX: Not standard, but madwifi uses it.
 RTAP_EXT = 31 # Denotes extended "present" fields.
 
-# class that holds data for N samples
-class DataBuf:
+# plot class
+class Plot:
     def __init__(self, maxT):
         self.x = deque()
         self.y = deque()
         self.init = time()
         self.maxT = maxT
+        self.line, = plt.plot(self.x, self.y)
+        plt.ylim([-100, 0])
+        self._redraw()
 
-    # add data to ring buffer
-    def add(self, data):
+    def _redraw(self):
+        if (len(self.x) > 1):
+            plt.xlim([min(self.x), max(self.x)])
+        plt.draw()
+        plt.pause(1e-4)
+
+    # update plot with a new point
+    def update(self, data):
         t = time() - self.init
         self.x.append(t)
         self.y.append(data)
         while self.x[-1] - self.x[0] > self.maxT:
             self.x.popleft()
             self.y.popleft()
-
-# plot class
-class Plot:
-    def __init__(self, dataBuf):
-        # set interactive mode
-        plt.ion()
-        self.line, = plt.plot(dataBuf.x, dataBuf.y)
-        plt.ylim([-100, 0])
-
-    # update plot
-    def update(self, dataBuf):
-        # not working
-        # self.line.set_xdata(dataBuf.x)
-        # self.line.set_ydata(dataBuf.y)
-        # plt.draw()
-        # workaround
-        plt.plot(dataBuf.x, dataBuf.y)
-        plt.draw()
-        plt.pause(0.001)
+        self.line.set_data(self.x, self.y)
+        self._redraw()
 
 class Parser:
     def __init__(self, dev, plot, xAxis=10):
         max_bytes = 200
         promiscuous = True
-        read_timeout = 10 # in milliseconds
+        read_timeout = 0 # in milliseconds
         self.pc = pcapy.open_live(dev, max_bytes, promiscuous, read_timeout)
         if plot:
-            self.dataBuf = DataBuf(xAxis)
-            self.plot = Plot(self.dataBuf)
-        else:
-            self.plot = False
+            self.plot = Plot(xAxis)
+        else: self.plot = None
 
     # what to do with every packet
     def recv_pkts(self, hdr, data):
@@ -96,8 +86,7 @@ class Parser:
             # get SSI Signal [dBm]
             power, = struct.unpack('b', data[8+offset])
             if self.plot:
-            	self.dataBuf.add(power)
-            	self.plot.update(self.dataBuf)
+            	self.plot.update(power)
             else:
             	print power
             	sys.stdout.flush()
