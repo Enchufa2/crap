@@ -2,6 +2,7 @@
 # coding: utf-8
 # wlan-rssi-monitor: monitor the RSSI received from a given MAC
 # Copyright (C) 2016 Iñaki Ucar  <i.ucar86@gmail.com>
+# This program is published under the CRAPL
 
 import argparse, pcapy, struct, sys
 from time import time

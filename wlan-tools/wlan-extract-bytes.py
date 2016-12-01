@@ -2,6 +2,7 @@
 # coding: utf-8
 # wlan-extract-bytes: extract n bytes at index i for each packet in a PCAP file
 # Copyright (C) 2016 Iñaki Ucar <i.ucar86@gmail.com>
+# This program is published under the CRAPL
 
 import argparse, pcapy, struct
 
