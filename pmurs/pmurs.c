@@ -87,22 +87,22 @@ int main(int argc, char *argv[]) {
     clean_and_exit("socket");
   if ((ret = bind(sockfd, srcinfo->ai_addr, srcinfo->ai_addrlen)) != 0)
     clean_and_exit("bind");
-  if ((ret = connect(sockfd, p->ai_addr, p->ai_addrlen)) != 0)
-    clean_and_exit("connect");
 
   // fork heartbeat
   if ((cpid1 = fork()) < 0)
     clean_and_exit("fork");
   if (cpid1 == 0) {
     while (1) {
-      send(sockfd, HEARTBEAT, sizeof(HEARTBEAT), 0);
+      sendto(sockfd, HEARTBEAT, sizeof(HEARTBEAT), 0,
+             p->ai_addr, p->ai_addrlen);
       sleep(heartbeat);
     }
   }
 
   while (1) {
     memset(buffer, 0, sizeof(buffer));
-    if ((ret = recv(sockfd, buffer, sizeof(buffer), 0)) < 0)
+    if ((ret = recvfrom(sockfd, buffer, sizeof(buffer), 0,
+                        p->ai_addr, &p->ai_addrlen)) < 0)
       continue;
 
     if ((cpid2 = fork()) < 0) {
