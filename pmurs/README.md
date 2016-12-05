@@ -6,7 +6,8 @@ sends a dummy UDP packet, a *heartbeat*, every `n` seconds to that IP/PORT to
 open any NAT in the middle. Linux establishes a timeout of 60 seconds (see
 `/proc/net/nf_conntrack`), so the interval should be shorter than that.
 
-**I warn you: don't use this outside of a controlled environment**.
+I use it to send commands to nodes in my experiments with minimal network
+impact. **I warn you: don't use this outside of a controlled environment**.
 
 ## Compilation
 

