@@ -58,16 +58,15 @@ void catch_child(int sig_num) {
 
 int main(int argc, char *argv[]) {
   struct addrinfo hints, *p = NULL;
-  int ret, heartbeat;
+  int ret, heartbeat = -1;
   char buffer[1000];
 
-  if (argc != 5) {
-    fprintf(stderr,"usage: %s <remote_IP> <remote_PORT> <local_PORT> <heartbeat_interval>\n", argv[0]);
+  if (argc < 4) {
+    fprintf(stderr,"usage: %s <remote_IP> <remote_PORT> <local_PORT> [heartbeat_interval]\n", argv[0]);
     exit(1);
   }
 
-  if ((heartbeat = atoi(argv[4])) < 1)
-    heartbeat = 1;
+  if (argc > 4) heartbeat = atoi(argv[4]);
 
   // source address
   memset(&hints, 0, sizeof hints);
@@ -102,7 +101,7 @@ int main(int argc, char *argv[]) {
   signal(SIGCHLD, catch_child);
 
   // fork heartbeat
-  switch ((cpid1 = fork())) {
+  if (heartbeat > 0) switch ((cpid1 = fork())) {
   case -1:
     clean_and_exit("fork");
   case 0:
