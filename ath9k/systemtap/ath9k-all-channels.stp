@@ -1,0 +1,72 @@
+#!/usr/bin/env stap
+# Enable operation on all channels (kernel-4.8.13-300.fc25.x86_64)
+# Copyright (C) 2016 Iñaki Ucar  <i.ucar86@gmail.com>
+# This program is published under the CRAPL
+
+%{
+#include <linux/nl80211.h>
+#include <net/regulatory.h>
+#include <net/cfg80211.h>
+
+static const struct ieee80211_regdomain ath_regdom_permissive = {
+	.n_reg_rules = 2,
+  .alpha2 =  "99",
+  .reg_rules = {
+		REG_RULE(2412-10, 2484+10, 40, 0, 20, 0),
+		REG_RULE(5040-10, 5850+10, 80, 0, 30, 0)
+	}
+};
+%}
+
+function disable_radar_flags(wiphy:long) %{
+  struct wiphy *wiphy = (struct wiphy *)STAP_ARG_wiphy;
+  struct ieee80211_supported_band *sband;
+  struct ieee80211_channel *ch;
+  unsigned int i;
+
+  if (!wiphy->bands[NL80211_BAND_5GHZ])
+    return;
+
+  sband = wiphy->bands[NL80211_BAND_5GHZ];
+
+  for (i = 0; i < sband->n_channels; i++) {
+    ch = &sband->channels[i];
+    ch->flags &= ~(IEEE80211_CHAN_RADAR | IEEE80211_CHAN_NO_IR);
+  }
+%}
+
+# Return 0x60 from EEPROM to enable world domain
+global flag = 0;
+
+probe module("ath9k*").function("*get_eeprom").call {
+  if ($param == 5) flag = 1;
+}
+
+probe module("ath9k*").function("*get_eeprom").return {
+  if (flag) {
+    flag = 0;
+    $return = 0x60;
+  }
+}
+
+# Substitute the world domain with my own permissive one
+probe module("ath").statement("ath_regd_init_wiphy@drivers/net/wireless/ath/regd.c:655") {
+  $regd = %{ &ath_regdom_permissive %};
+  printk(6, "ath9k-all-channels: regulatory domain set to custom permissive");
+}
+
+# Set interface as self-managed
+probe module("ath").statement("ath_regd_init_wiphy@drivers/net/wireless/ath/regd.c:656") {
+  $wiphy->regulatory_flags = 0xc0;
+}
+
+probe module("cfg80211").statement("wiphy_register@net/wireless/core.c:558") {
+  if ($wiphy->regulatory_flags == 0xc0)
+    printk(6, "ath9k-all-channels: interface set as self-managed");
+  else error("ooops, something went wrong!");
+}
+
+# Disable radar flags in 5 GHz
+probe module("ath").statement("ath_regd_init_wiphy@drivers/net/wireless/ath/regd.c:657") {
+  disable_radar_flags($wiphy);
+}

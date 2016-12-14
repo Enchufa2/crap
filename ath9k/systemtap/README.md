@@ -1,0 +1,1 @@
+- **ath9k-all-channels.stp**: enable operation on all channels (requires _guru mode_). Made for kernel-4.8.13-300.fc25.x86_64. It may need some adjustments for other Linux versions. 
