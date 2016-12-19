@@ -81,14 +81,14 @@ class Parser:
             offset = 0
             if flags & 1 << RTAP_TSFT:
                 offset += 8
-            if flags & 1 << RTAP_FLAGS:
-                offset += 1
-            if flags & 1 << RTAP_RATE:
-                offset += 1
-            if flags & 1 << RTAP_CHANNEL:
-                offset += 4
-            if flags & 1 << RTAP_FHSS:
-                offset += 2
+            #if flags & 1 << RTAP_FLAGS:
+            offset += 1
+            #if flags & 1 << RTAP_RATE:
+            offset += 1
+            #if flags & 1 << RTAP_CHANNEL:
+            offset += 2
+            #if flags & 1 << RTAP_FHSS:
+            offset += 2
             # get SSI Signal [dBm]
             t = hdr.getts()
             power, = struct.unpack('b', data[8+offset])
